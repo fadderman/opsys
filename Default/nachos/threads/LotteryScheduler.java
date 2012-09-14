@@ -1,6 +1,6 @@
-package nachos.threads;
+package threads;
 
-import nachos.machine.*;
+import machine.*;
 
 import java.util.TreeSet;
 import java.util.HashSet;

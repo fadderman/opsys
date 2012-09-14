@@ -1,6 +1,6 @@
-package nachos.threads;
+package threads;
 
-import nachos.machine.*;
+import machine.*;
 
 /**
  * A single rider. Each rider accesses the elevator bank through an

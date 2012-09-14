@@ -1,4 +1,4 @@
-package nachos.threads;
+package threads;
 
 /**
  * Schedules access to some sort of resource with limited access constraints. A

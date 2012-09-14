@@ -1,6 +1,6 @@
-package nachos.threads;
+package threads;
 
-import nachos.machine.*;
+import machine.*;
 
 /**
  * An implementation of condition variables that disables interrupt()s for

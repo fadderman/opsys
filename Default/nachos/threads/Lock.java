@@ -1,6 +1,6 @@
-package nachos.threads;
+package threads;
 
-import nachos.machine.*;
+import machine.*;
 
 /**
  * A <tt>Lock</tt> is a synchronization primitive that has two states,

@@ -1,8 +1,8 @@
-package nachos.threads;
+package threads;
 
 import java.util.LinkedList;
-import nachos.machine.*;
-import nachos.threads.*;
+import machine.*;
+
 
 /**
  * A synchronized queue.
