@@ -1,6 +1,5 @@
-package threads;
-
-import ag.BoatGrader;
+package nachos.threads;
+import nachos.ag.BoatGrader;
 
 public class Boat
 {

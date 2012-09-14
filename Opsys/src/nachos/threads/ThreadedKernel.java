@@ -1,6 +1,6 @@
-package threads;
+package nachos.threads;
 
-import machine.*;
+import nachos.machine.*;
 
 /**
  * A multi-threaded OS kernel.

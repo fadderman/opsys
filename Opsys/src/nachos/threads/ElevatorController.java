@@ -1,6 +1,6 @@
-package threads;
+package nachos.threads;
 
-import machine.*;
+import nachos.machine.*;
 
 /**
  * A controller for all the elevators in an elevator bank. The controller

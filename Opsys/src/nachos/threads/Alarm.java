@@ -1,6 +1,6 @@
-package threads;
+package nachos.threads;
 
-import machine.*;
+import nachos.machine.*;
 
 /**
  * Uses the hardware timer to provide preemption, and to allow threads to sleep

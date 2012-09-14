@@ -1,6 +1,6 @@
-package threads;
+package nachos.threads;
 
-import machine.*;
+import nachos.machine.*;
 
 /**
  * Coordinates a group of thread queues of the same kind.

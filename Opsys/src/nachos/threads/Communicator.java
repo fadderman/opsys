@@ -1,6 +1,6 @@
-package threads;
+package nachos.threads;
 
-import machine.*;
+import nachos.machine.*;
 
 /**
  * A <i>communicator</i> allows threads to synchronously exchange 32-bit

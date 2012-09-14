@@ -1,6 +1,6 @@
-package threads;
+package nachos.threads;
 
-import machine.*;
+import nachos.machine.*;
 
 /**
  * A <tt>Semaphore</tt> is a synchronization primitive with an unsigned value.
