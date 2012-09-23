@@ -62,12 +62,14 @@ public class Communicator {
 	public int listen() {
 		lock.acquire();
 		
-		while(full){
+		while(!full){
+			speakers.wake();
 			listeners.sleep();
 		}
 		int result = word;
 		full = false;
 		speakers.wake();
+		listeners.wake();
 		
 		lock.release();
 		return result;
