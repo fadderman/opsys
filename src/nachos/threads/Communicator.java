@@ -48,8 +48,11 @@ public class Communicator {
 			speakers.sleep();
 		}
 		this.word = word;
+		full = true;
 		
 		listeners.wake();
+		speakers.sleep();
+		
 		lock.release();
 	}
 
