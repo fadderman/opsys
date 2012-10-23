@@ -3,6 +3,7 @@ package nachos.userprog;
 import nachos.machine.*;
 import nachos.threads.*;
 import nachos.userprog.*;
+import nachos.userprog.UserKernel.InadequatePagesException;
 
 import java.io.EOFException;
 import java.util.Collection;
@@ -161,7 +162,7 @@ public class UserProcess {
 			for (MemoryAccess ma : memoryAccesses) {
 				temp = ma.executeAccess();
 
-				if (temp == 0)break;
+				if (temp == 0) break;
 				else bytesRead += temp;
 			}
 			memoryAccessLock.release();
@@ -355,16 +356,7 @@ public class UserProcess {
 		this.argc = args.length;
 		this.argv = entryOffset;
 
-		for (int i=0; i<argv.length; i++) {
-			byte[] stringOffsetBytes = Lib.bytesFromInt(stringOffset);
-			Lib.assertTrue(writeVirtualMemory(entryOffset,stringOffsetBytes) == 4);
-			entryOffset += 4;
-			Lib.assertTrue(writeVirtualMemory(stringOffset, argv[i]) ==
-					argv[i].length);
-			stringOffset += argv[i].length;
-			Lib.assertTrue(writeVirtualMemory(stringOffset,new byte[] { 0 }) == 1);
-			stringOffset += 1;
-		}
+		loadArguments(entryOffset, stringOffset, argv);
 
 		return true;
 	}
@@ -390,25 +382,27 @@ public class UserProcess {
 	 * @return	<tt>true</tt> if the sections were successfully loaded.
 	 */
 	protected boolean loadSections() {
-		if (numPages > Machine.processor().getNumPhysPages()) {
+		try {
+			pageTable = ((UserKernel) Kernel.kernel).acquirePages(numPages);
+
+			for (int i = 0; i < pageTable.length; i++)
+				pageTable[i].vpn = i;
+
+			for (int sectionNumber = 0; sectionNumber < coff.getNumSections(); sectionNumber++) {
+				CoffSection section = coff.getSection(sectionNumber);
+
+				Lib.debug(dbgProcess, "\tinitializing " + section.getName() + " section (" + section.getLength() + " pages)");
+
+				int firstVPN = section.getFirstVPN();
+				for (int i = 0; i < section.getLength(); i++)
+					section.loadPage(i, pageTable[i+firstVPN].ppn);
+			}
+		} catch (InadequatePagesException a) {
 			coff.close();
 			Lib.debug(dbgProcess, "\tinsufficient physical memory");
 			return false;
-		}
-
-		// load sections
-		for (int s=0; s<coff.getNumSections(); s++) {
-			CoffSection section = coff.getSection(s);
-
-			Lib.debug(dbgProcess, "\tinitializing " + section.getName()
-					+ " section (" + section.getLength() + " pages)");
-
-			for (int i=0; i<section.getLength(); i++) {
-				int vpn = section.getFirstVPN()+i;
-
-				// for now, just assume virtual addresses=physical addresses
-				section.loadPage(i, vpn);
-			}
+		} catch (ClassCastException c) {
+			Lib.assertNotReached("Error : instantiating a UserProcess without a UserKernel");
 		}
 
 		return true;
@@ -418,6 +412,11 @@ public class UserProcess {
 	 * Release any resources allocated by <tt>loadSections()</tt>.
 	 */
 	protected void unloadSections() {
+		try {
+			((UserKernel)Kernel.kernel).releasePages(pageTable);
+		} catch (ClassCastException c) {
+			Lib.assertNotReached("Error : Kernel is not an instance of UserKernel");
+		}
 	}    
 
 	/**
@@ -443,6 +442,24 @@ public class UserProcess {
 		processor.writeRegister(Processor.regA1, argv);
 	}
 
+
+
+	/**
+	 * Handle the halt() system call. 
+	 */
+	private int handleHalt() {
+
+		if (pid != ROOT_PID) {
+			Lib.debug(dbgProcess, "Unable to halt.  Only root process may halt operating system");
+			return -1;
+		}
+
+		Machine.halt();
+
+		Lib.assertNotReached("Machine.halt() did not halt machine!");
+		return 0;
+	}
+
 	/**
 	 * Return first unused file descriptor, or -1 if fileTable full
 	 */
@@ -463,22 +480,6 @@ public class UserProcess {
 			return false;
 
 		return fileTable[fileDesc] != null;
-	}
-
-	/**
-	 * Handle the halt() system call. 
-	 */
-	private int handleHalt() {
-
-		if (pid != ROOT_PID) {
-			Lib.debug(dbgProcess, "Unable to halt.  Only root process may halt operating system");
-			return -1;
-		}
-
-		Machine.halt();
-
-		Lib.assertNotReached("Machine.halt() did not halt machine!");
-		return 0;
 	}
 
 	/**
@@ -528,7 +529,7 @@ public class UserProcess {
 
 		fileTable[fileDesc] = file;
 
-		return 0;
+		return fileDesc;
 	}
 
 	/**
@@ -622,6 +623,17 @@ public class UserProcess {
 		return FileRef.deleteFile(fileName);
 	}
 
+	/**
+	 * Handle spawning a new process
+	 * @param fileNamePtr
+	 * Pointer to null terminated string containing executable name
+	 * @param argc
+	 * Number of arguments to pass new process
+	 * @param argvPtr
+	 * Array of null terminated strings containing arguments
+	 * @return
+	 * PID of child process, or -1 on failure
+	 */
 	private int handleExec(int fileNamePtr, int argc, int argvPtr) {
 		if (!validAddress(fileNamePtr) || !validAddress(argv)) return terminate();
 
@@ -697,12 +709,18 @@ public class UserProcess {
 		return 0;
 	}
 
+	/**
+	 * Called on a parent process by an exiting child to inform them that the child has terminated.
+	 * @param childPID
+	 * @param childStatus
+	 * Value of the exit status, or null if exited due to unhandled exception
+	 */
 	private void notifyChildExitStatus(int childPID, Integer childStatus) {
 		ChildProcess child = children.get(childPID);
 		if (child == null) return;
 
 		child.process = null;
-		
+
 		child.returnValue = childStatus;
 	}
 
@@ -714,6 +732,56 @@ public class UserProcess {
 	private int terminate() {
 		handleExit(null);
 		return -1;
+	}
+
+	/**
+	 * Wait for child process to exit and transfer exit value
+	 * @param pid
+	 * Pid of process to join on
+	 * @param statusPtr
+	 * Pointer to store process exit status
+	 * @return
+	 * -1 on attempt to join non child process
+	 * 1 if child exited due to unhandled exception
+	 * 0 if child exited cleanly
+	 */
+	private int handleJoin(int pid, int statusPtr) {
+		if (!validAddress(statusPtr))
+			return terminate();
+
+		ChildProcess child = children.get(pid);
+
+		// Can't join on non-child!
+		if (child == null)
+			return -1;
+
+		// Child still running, try to join
+		if (child.process != null)
+			child.process.joinProcess();
+		// We can safely forget about this child after join
+		children.remove(pid);
+
+		// Child will have transfered return value to us
+
+		// Child exited due to unhandled exception
+		if (child.returnValue == null)
+			return 0;
+
+		// Transfer return value into status ptr
+		writeVirtualMemory(statusPtr, Lib.bytesFromInt(child.returnValue));
+
+		// Child exited cleanly
+		return 1;
+	}
+
+	/**
+	 * Cause caller to sleep until this process has exited
+	 */
+	private void joinProcess() {
+		joinLock.acquire();
+		while (!exited)
+			waitingToJoin.sleep();
+		joinLock.release();
 	}
 
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
@@ -752,6 +820,27 @@ public class UserProcess {
 		switch (syscall) {
 		case syscallHalt:
 			return handleHalt();
+		case syscallExit:
+			return handleExit(a0);
+		case syscallExec:
+			return handleExec(a0, a1, a2);
+		case syscallJoin:
+			return handleJoin(a0, a1);
+
+		case syscallCreate:
+			return handleCreate(a0);
+		case syscallOpen:
+			return handleOpen(a0);
+		case syscallRead:
+			return handleRead(a0, a1, a2);
+		case syscallWrite:
+			return handleWrite(a0, a1, a2);
+		case syscallClose:
+			return handleClose(a0);
+		case syscallUnlink:
+			return handleUnlink(a0);
+
+
 
 
 		default:
@@ -787,6 +876,7 @@ public class UserProcess {
 		default:
 			Lib.debug(dbgProcess, "Unexpected exception: " +
 					Processor.exceptionNames[cause]);
+			terminate();
 			Lib.assertNotReached("Unexpected exception");
 		}
 	}
@@ -804,9 +894,7 @@ public class UserProcess {
 	protected static class FileRef {
 		int references;
 		boolean delete;
-		private static HashMap<String, FileRef> globalFileReferences = new HashMap<String, FileRef> ();
-		private static Lock globalFileReferencesLock = new Lock();
-
+		
 		public static boolean referenceFile(String fileName) {
 			FileRef ref = updateFileReference(fileName);
 			boolean canReference = !ref.delete;
@@ -826,8 +914,6 @@ public class UserProcess {
 			finishUpdateFileReference();
 			return ret;
 		}
-
-
 
 		public static int unreferenceFile(String fileName) {
 			FileRef ref = updateFileReference(fileName);
@@ -868,6 +954,11 @@ public class UserProcess {
 		private static void finishUpdateFileReference() {
 			globalFileReferencesLock.release();
 		}
+		
+		/** Global file reference tracker & lock */
+		private static HashMap<String, FileRef> globalFileReferences = new HashMap<String, FileRef> ();
+		private static Lock globalFileReferencesLock = new Lock();
+
 	}
 
 	/** The program being run by this process. */
