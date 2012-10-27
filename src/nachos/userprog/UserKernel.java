@@ -151,7 +151,7 @@ public class UserKernel extends ThreadedKernel {
 	/** Globally accessible reference to the synchronized console. */
 	public static SynchConsole console;
 
-	// dummy variables to make javac smarter
+	
 	private static Coff dummy1 = null;
 
 	/**
@@ -165,9 +165,7 @@ public class UserKernel extends ThreadedKernel {
 	private Lock freePagesLock;
 
 	static class InadequatePagesException extends Exception {
-		/**
-		 * Something to make Eclipse stop complaining.
-		 */
+		
 		private static final long serialVersionUID = 6256028192007727092L;
 	}
 }

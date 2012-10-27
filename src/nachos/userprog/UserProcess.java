@@ -449,7 +449,7 @@ public class UserProcess {
 	 */
 	private int handleHalt() {
 
-		if (pid != ROOT_PID) {
+		if (PID != ROOT_PID) {
 			Lib.debug(dbgProcess, "Unable to halt.  Only root process may halt operating system");
 			return -1;
 		}
@@ -522,7 +522,6 @@ public class UserProcess {
 		OpenFile file = UserKernel.fileSystem.open(fileName, create);
 
 		if (file == null) {
-			// Remove the previously created reference since we failed to open the file
 			FileRef.unreferenceFile(fileName);
 			return -1;
 		}
@@ -635,22 +634,23 @@ public class UserProcess {
 	 * PID of child process, or -1 on failure
 	 */
 	private int handleExec(int fileNamePtr, int argc, int argvPtr) {
-		if (!validAddress(fileNamePtr) || !validAddress(argv)) return terminate();
+		if (!validAddress(fileNamePtr) || !validAddress(argv)){
+			return terminate();
+		}
 
 		String fileName = readVirtualMemoryString(fileNamePtr, MAXSYSCALLARGLENGTH);
 
-		if (fileName == null || !fileName.endsWith(".coff")) return -1;
-
+		if (fileName == null || !fileName.endsWith(".coff")){
+			return -1;
+		}
 
 		String arguments[] = new String[argc];
-
 
 		int argvLen = argc * 4;	
 		byte argvArray[] = new byte[argvLen];
 		if (argvLen != readVirtualMemory(argvPtr, argvArray)) {
 			return -1;
 		}
-
 
 		for (int i = 0; i < argc; i++) {
 			int pointer = Lib.bytesToInt(argvArray, i*4);
@@ -680,28 +680,33 @@ public class UserProcess {
 	private int handleExit(Integer status) {
 		joinLock.acquire();
 
-		if (parent != null) parent.notifyChildExitStatus(PID, status);
+		if (parent != null) {
+			parent.notifyChildExitStatus(PID, status);
+		}
 
 		for (ChildProcess child : children.values()){
-			if (child.process != null) child.process.disown();
+			if (child.process != null){
+				child.process.disown();
+			}
 		}
 		children = null;
 
-
 		for (int fileDesc = 0; fileDesc < fileTable.length; fileDesc++){
-			if (validFileDescriptor(fileDesc)) handleClose(fileDesc);
+			if (validFileDescriptor(fileDesc)) {
+				handleClose(fileDesc);
+			}
 		}
 
 		unloadSections();
-
 
 		exited = true;
 		waitingToJoin.wakeAll();
 		joinLock.release();
 
-
 		sharedStateLock.acquire();
-		if (--runningProcesses == 0) Kernel.kernel.terminate();
+		if (--runningProcesses == 0){
+			Kernel.kernel.terminate();
+		}
 		sharedStateLock.release();
 
 		KThread.finish();
@@ -746,31 +751,28 @@ public class UserProcess {
 	 * 0 if child exited cleanly
 	 */
 	private int handleJoin(int pid, int statusPtr) {
-		if (!validAddress(statusPtr))
+		if (!validAddress(statusPtr)){
 			return terminate();
+		}
 
 		ChildProcess child = children.get(pid);
 
-		// Can't join on non-child!
-		if (child == null)
+		if (child == null){
 			return -1;
+		}
 
-		// Child still running, try to join
-		if (child.process != null)
+		if (child.process != null){
 			child.process.joinProcess();
-		// We can safely forget about this child after join
+		}
 		children.remove(pid);
 
-		// Child will have transfered return value to us
-
-		// Child exited due to unhandled exception
-		if (child.returnValue == null)
+		
+		if (child.returnValue == null){
 			return 0;
+		}
 
-		// Transfer return value into status ptr
 		writeVirtualMemory(statusPtr, Lib.bytesFromInt(child.returnValue));
 
-		// Child exited cleanly
 		return 1;
 	}
 
@@ -938,8 +940,6 @@ public class UserProcess {
 			return 0;
 		}
 
-
-
 		private static FileRef updateFileReference(String fileName) {
 			globalFileReferencesLock.acquire();
 			FileRef ref = globalFileReferences.get(fileName);
@@ -978,7 +978,6 @@ public class UserProcess {
 	private static final int pageSize = Processor.pageSize;
 	private static final char dbgProcess = 'a';
 
-	public int pid = -1;
 	public static final int ROOT_PID = 0;
 
 	protected OpenFile[] fileTable = new OpenFile[16];
